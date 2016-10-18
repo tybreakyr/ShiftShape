@@ -1,8 +1,12 @@
 ﻿using System;
+using System.CodeDom;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
@@ -14,27 +18,51 @@ namespace ShiftShape
     {
         private static void Main(string[] args)
         {
-            Marketinfo marketInfo = new Marketinfo();
-            while (true)
-            {
-                var request = WebRequest.Create("https://shapeshift.io/marketinfo/btc_eth");
-                HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                Console.WriteLine(response.StatusDescription);
-                using (var dataStream = response.GetResponseStream())
-                {
-                    using (var streamReader = new StreamReader(dataStream))
-                    {
-                        var ser = new DataContractJsonSerializer(typeof(Marketinfo));
-                        marketInfo = (Marketinfo) ser.ReadObject(dataStream);
-                        Console.WriteLine(marketInfo.rate);
-                    }
-                }
-                System.Threading.Thread.Sleep(2000);
-            }
+            var marketInfo = new Marketinfo();
+            var requestQueue = new Queue<WebRequest>();
+            requestQueue.Enqueue(WebRequest.Create("https://shapeshift.io/marketinfo/btc_eth"));
+
+            var responseQueue = new Queue<WebResponse>();
+            FetchQueueResponses(requestQueue,responseQueue);
             Console.ReadLine();
         }
+
+        public static void FetchQueueResponses(Queue<WebRequest> webRequestQueue,Queue<WebResponse> webResponseQueue)
+        {
+            
+            while (true)
+            {
+                foreach (dynamic webRequest in webRequestQueue)
+                {
+                    webResponseQueue.Enqueue((HttpWebResponse)webRequest.GetResponse());                    
+                }
+            }
+        }
+
+        private static dynamic Convert_To_JSON_DeQueue(Queue<WebResponse> webResponseQueue)
+        {
+            //"https://shapeshift.io/marketinfo/btc_eth"
+
+            var response = webResponseQueue.Dequeue();
+
+            try
+            {
+                using (var dataStream = response.GetResponseStream())
+                {
+                    var ser = new DataContractJsonSerializer(typeof(Marketinfo));
+                    return dataStream != null ? ser.ReadObject(dataStream) : null;
+                }
+            }
+            finally
+            {
+                //throttled for safety
+                System.Threading.Thread.Sleep(3000);
+            }
+        }
+
     }
     [DataContract]
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
     public class Marketinfo
     {
         [DataMember]
